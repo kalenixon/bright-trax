@@ -3,16 +3,15 @@ const COLORTHRESH = 70;
 const PSYCHWAITTIME = 8000;
 const MOTION_LINE = 1;
 const MOTION_REV = 2;
-// by default all options are set to true
 const detectionOptions = {
   withLandmarks: true,
   withDescriptors: false,
 };
 
 let app = {
-	pixelSize: 4,
+	pixelSize: 5,
   nodeDim: 15,
-  numNodes: 3,
+  numNodes: 2,
   nodeCollideThresh: 35,
 	drawSquare: true,
   trackR: 255,
@@ -21,21 +20,20 @@ let app = {
   fillR: 255,
   fillG: 0,
   fillB: 0,
-  doShader: true,
-	noiseScale: 0.1,
   cthresh: 0,
   bthresh: 0,
   useShader: false,
   motion: MOTION_LINE,
-  ns: .01
+  ns: .01,
+  faceOnly: true,
+  leftPart: 'leftEye',
+  rightPart: 'rightEye'
 };
-
 
 let faceapi;
 let detections;
 let poseNet;
 let pose;
-let skeleton;
 let saved = []; // array of PsychPixs
 let savedColors = [];
 let nodes = []; // array of PixNodes
@@ -43,11 +41,13 @@ let faceX = 0;
 let faceY = 0;
 let faceW = 0;
 let faceH = 0;
+let init = false;
 
 function setup() {
 	createCanvas(640, 480);
-	capture = createCapture(VIDEO);
+	capture = createCapture(VIDEO, videoReady);
 	capture.hide();
+
   poseNet = ml5.poseNet(capture, modelLoaded);
   poseNet.on('pose', gotPoses);
   faceapi = ml5.faceApi(capture, detectionOptions, modelReady);
@@ -56,13 +56,15 @@ function setup() {
   app.cthresh = COLORTHRESH;
 
   setFillColors({mode: 'random'});
-	
   colorMode(HSB, 100);
+}
 
+function videoReady() {
   for (let i = 0; i < app.numNodes; i++) {
     let node = {};
     let speed = parseInt(random(10)) % 2 == 0 ? app.pixelSize : -app.pixelSize;
     let div = 100/app.numNodes;
+
     node.color = color(parseInt(div*(i+1)), 50, 75);
     node.speed = speed + parseInt(random(0, 2));
     node.dim = app.nodeDim;
@@ -70,6 +72,7 @@ function setup() {
     node.y = random(height);
     nodes[i] = new PixNode(node);
   }
+  init = true;
 }
 
 function modelLoaded() {
@@ -87,14 +90,11 @@ function gotResults(err, result) {
     console.log(err);
     return;
   }
-  // console.log(result)
-  detections = result;
 
+  detections = result;
   if (detections) {
     if (detections.length > 0) {
-      // console.log(detections)
       drawBox(detections);
-  //    drawLandmarks(detections);
     }
   }
   faceapi.detect(gotResults);
@@ -103,7 +103,7 @@ function gotResults(err, result) {
 function drawBox(detections) {
   for (let i = 0; i < detections.length; i += 1) {
     const alignedRect = detections[i].alignedRect;
-    faceX = alignedRect._box._x;
+    faceX = width - alignedRect._box._x -1;
     faceY = alignedRect._box._y;
     faceW = alignedRect._box._width;
     faceH = alignedRect._box._height;
@@ -111,49 +111,30 @@ function drawBox(detections) {
 }
 
 function gotPoses(poses) {
-  //console.log(poses); 
   if (poses.length > 0) {
     pose = poses[0].pose;
-    skeleton = poses[0].skeleton;
   }
 }
 
 function draw() {
+  if (!init) {
+    return;
+  }
+
   let ns = app.ns;
   capture.loadPixels();
 
+  colorMode(RGB, 255);
   background(255);
-    // Flip screen on x axis 
-  push();
-  scale(-1,1);
-  //image(capture.get(),-width,0);
-  pop();
-
-
-
-  /*
-  let joints = [pose.leftEye, pose.rightEye];
-  for (let i = 0; i < joints.length; i++) {
-    let speed = parseInt(random(10)) % 2 == 0 ? app.pixelSize : -app.pixelSize;
-    let div = 100/joints.length;
-
-    joints[i].color = getLocColor(Math.round(joints[i].x), Math.round(joints[i].y));
-    joints[i].speed += parseInt(random(0, 2));
-    joints[i].dim = app.nodeDim;
-    nodes[i] = new PixNode(joints[i]);
-  }*/
-
 
   saved = [];
   savedColors = [];
 
-  colorMode(RGB, 255);
-  
 	for (let x = 0; x < capture.width; x += app.pixelSize) {
   	for (let y = 0; y < capture.height; y += app.pixelSize) {
-      let c = getLocColor(x, y);
-
-      if (true || x >= faceX && y >= faceY && x <= faceX+faceW && y <= faceY+faceH) {
+      let c = getLocColor(width-x-1, y);
+      
+      if (!app.faceOnly || (app.faceOnly && x >= faceX-faceW && y >= faceY && x <= faceX  && y <= faceY+faceH)) {     
         let d = dist(
           red(c),
           green(c),
@@ -172,24 +153,18 @@ function draw() {
         } 
 
         if (savedColors[x] && savedColors[x][y] == 1) {
+          let nc = color(app.fillR, app.fillG, app.fillB);
+          colorMode(HSB, 100);  
 
-          let ns = random(10) / 10;
+          if (app.useShader) {
+            nc = getShaderColor(nc, x, y, ns);
+          }  
 
-          //c = getShaderColor(x, y, ns);
-          colorMode(HSB, 100);     
-          fill(75, saturation(c), brightness(c) * 2);
-
-          drawPixel(app.pixelSize , app.drawSquare, width - x - 1, y);  
+          fill(hue(nc), saturation(nc), brightness(c) * 2);
+          drawPixel(app.pixelSize , app.drawSquare, x, y);  
           colorMode(RGB, 255);
-        } else {
-          colorMode(HSB, 100);
-          let nc = getShaderColor(x, y, ns);
-          fill(nc);
-           drawPixel(app.pixelSize , app.drawSquare, width - x - 1, y); 
-           colorMode(RGB, 255);
-        } 
+        }  
       }
-
 
       if (brightness(c) > app.bthresh) {
         if (!saved[x]) {
@@ -211,6 +186,7 @@ function draw() {
           saved[x][y].setNode(nodes[idx]);
         }  
       } else {
+        // This is not a bright pixel, move on to next iteration
         if (saved[x] && saved[x][y] != null) {
           saved[x][y].hide();
         }
@@ -234,77 +210,32 @@ function draw() {
     nodes[i].move();
   }
 
-    if (!pose) return;
+  if (!pose) return;
 
-  fill(255);
-  ellipse(width - pose.leftEye.x- 1, pose.leftEye.y, 20, 20);
-  ellipse(width - pose.rightEye.x- 1, pose.rightEye.y, 20, 20);
-
+  // Loop through nodes, if two are near enough, collide them
+  // If one is near an eye, lock it to the eye
   for (let i = 0; i < nodes.length; i++) {
     for (let j = 0; j < nodes.length; j++) {
       let n = nodes[i];
-/*
+
       if (i != j && !nodes[i].collision && !nodes[j].collision && (abs(nodes[i].location.x - nodes[j].location.x) < app.nodeCollideThresh && 
         abs(nodes[i].location.y - nodes[j].location.y) < app.nodeCollideThresh)) 
       {
         nodes[i].collide(nodes[j]);
-      }*/
+      }
 
-      let lw = pose.leftEye;
-      let rw = pose.rightEye;
-      let lyd = abs(n.location.y - lw.y);
-      let lxd = abs(n.location.x - (width - lw.x - 1));
-      let ryd = abs(n.location.y - rw.y);
-      let rxd = abs(n.location.x - (width - rw.x - 1));
+      if (!n.locked && !n.lockWait && app.motion != MOTION_REV) {
+        let lw = pose[app.leftPart];
+        let rw = pose[app.rightPart];
+        let lyd = abs(n.location.y - lw.y);
+        let lxd = abs(n.location.x - (width - lw.x -1));
+        let ryd = abs(n.location.y - rw.y);
+        let rxd = abs(n.location.x - (width - rw.x - 1));
 
-
-      if (lyd <= app.nodeCollideThresh+20 && lxd <= app.nodeCollideThresh+20) {
-     //   debugger;
-    //    console.log('left d: ' + lxd + ' ' + lyd);
-      //  console.log('COLLIDING LEFT');
-      /*  if (lw.y >= n.location.y) {
-          // lw = above
-          n.velocity.y = 0; //-= 2; 
-          n.location.y = lw.y - 10;
-        } else {
-          n.velocity.y = 0; //+= 2;
-          n.location.y = lw.y + 10;
-        }
-
-        if (lw.x >= n.location.x) {
-          // lw = above
-          n.velocity.x = 0; //-= 2; 
-          n.location.x = lw.x - 10;
-        } else {
-          n.velocity.x = 0; //+= 2;
-          n.location.x = lw.x + 10;
-
-        }*/
-        if (!n.locked) {
-          n.lock('leftEye');
-        }
-      } else if (ryd <= app.nodeCollideThresh+20 && rxd <= app.nodeCollideThresh+20) {
-   //         console.log('left d: ' + rxd + ' ' + ryd);
-      //     debugger;
-     // d   console.log('colliding right!');
-       /* if (rw.y >= n.location.y) {
-          n.velocity.y -= 2;
-          n.location.y = rw.y - 10;
-        } else {
-          // rw = below
-          n.velocity.y += 2;
-          n.location.y = rw.y + 10;
-        }
-
-        if (rw.x >= n.location.x) {
-          n.velocity.x -= 2; 
-          n.location.x = rw.x - 10;
-        } else {
-          n.velocity.x += 2;
-          n.location.x = rw.x + 10;
-        }*/
-        if (!n.locked) {
-          n.lock('rightEye');
+        if (lyd <= app.nodeCollideThresh+20 && lxd <= app.nodeCollideThresh+20) {
+          n.lock(app.leftPart);
+        } else if (ryd <= app.nodeCollideThresh+20 && rxd <= app.nodeCollideThresh+20) {
+          n.lock(app.rightPart);
         }
       }
     }
@@ -322,6 +253,8 @@ class PixNode {
     this.collision = false;
     this.angle = 0;
     this.angleDir = 1;
+    this.locked = false;
+    this.lockWait = false;
   }
   move() {
     if (this.locked) {
@@ -394,20 +327,26 @@ class PixNode {
     noStroke();
 
     if (this.locked) {
-      this.location.x = width - pose[this.part].x - 1;
+      this.location.x = width - pose[this.part].x -1;
       this.location.y = pose[this.part].y;
     }
   
-    ellipse(this.location.x, this.location.y, this.dim, this.dim);
-    
+    ellipse(this.location.x , this.location.y, this.dim, this.dim);
   }
   lock(part) {
     this.locked = true;
     this.part = part;
   }
   unlock() {
+    let self = this;
+
     this.locked = false;
     this.part = null;
+    this.lockWait = true;
+
+    setTimeout(function() {
+      self.lockWait = false;
+    }, 1000);
   }
 }
 
@@ -459,7 +398,7 @@ class PsychPix {
   display(){
     stroke(this.color);
     strokeWeight(app.pixelSize);
-    line(this.node.location.x, this.node.location.y, this.location.x, this.location.y);
+    line(this.node.location.x, this.node.location.y, width - this.location.x -1, this.location.y);
   }
   hide() {
 
@@ -476,7 +415,7 @@ function setFillColors(opts) {
 }
 
 function mouseClicked() {
-  let loc = (mouseX + (mouseY*capture.width))*4;
+  let loc = (width - mouseX  - 1 + (mouseY*capture.width))*4;
   app.trackR = capture.pixels[loc];
   app.trackG = capture.pixels[loc+1];
   app.trackB = capture.pixels[loc+2];
@@ -492,21 +431,26 @@ function keyPressed() {
       nodes[i].velocity.y = parseInt(nodes[i].velocity.y / 2);
       if (nodes[i].velocity.x <= 0) nodes[i].velocity.x = 1;
       if (nodes[i].velocity.y <= 0) nodes[i].velocity.y = 1;
-    } else if (keyCode == 90) {  //z
-      app.useShader = !app.useShader;
-    } else if (keyCode == 88) { // x
-      if (app.motion == MOTION_LINE) {
-        app.motion = MOTION_REV;
-      } else if (app.motion == MOTION_REV) {
-        app.motion = MOTION_LINE;
-      }
-    } else if (keyCode == 65) { // a
-      app.ns = random(0, 1) / 100;
-    } else if (keyCode = 67) { // c
-      setFillColors({mode: 'random'});
+    } else if (keyCode == 85) { // u
+        nodes[i].unlock();
     }
-
   }
+
+  if (keyCode == 90) {  //z
+    app.useShader = !app.useShader;
+  } else if (keyCode == 88) { // x
+    if (app.motion == MOTION_LINE) {
+      app.motion = MOTION_REV;
+    } else if (app.motion == MOTION_REV) {
+      app.motion = MOTION_LINE;
+    }
+  } else if (keyCode == 65) { // a
+    app.ns = random(0, 1) / 100;
+  } else if (keyCode == 67) { // c
+    setFillColors({mode: 'random'});
+  } else if (keyCode == 70) { // f
+    app.faceOnly = !app.faceOnly;
+  } 
 }
 
 function drawPixel(pixelSize, drawSquare, x, y) {
