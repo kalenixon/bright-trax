@@ -199,7 +199,7 @@ function draw() {
 
   for (let x = 0; x < capture.width; x += app.pixelSize) {
     for (let y = 0; y < capture.height; y += app.pixelSize) {
-      if (saved[x] && saved[x][y]) {
+      if (saved[x] && saved[x][y] && !saved[x][y].node.hidden) {
         saved[x][y].display();
       }
     }
@@ -255,9 +255,10 @@ class PixNode {
     this.angleDir = 1;
     this.locked = false;
     this.lockWait = false;
+    this.hidden = false;
   }
   move() {
-    if (this.locked) {
+    if (this.locked || this.hidden) {
       return;
     }
 
@@ -323,15 +324,16 @@ class PixNode {
     }
   }
   draw() {
-    fill(this.color);
-    noStroke();
-
-    if (this.locked) {
-      this.location.x = width - pose[this.part].x -1;
-      this.location.y = pose[this.part].y;
+    if (!this.hidden) {
+      fill(this.color);
+      noStroke();
+      if (this.locked) {
+        this.location.x = width - pose[this.part].x -1;
+        this.location.y = pose[this.part].y;
+      }
+    
+      ellipse(this.location.x , this.location.y, this.dim, this.dim);
     }
-  
-    ellipse(this.location.x , this.location.y, this.dim, this.dim);
   }
   lock(part) {
     this.locked = true;
@@ -348,6 +350,12 @@ class PixNode {
       self.lockWait = false;
     }, 1000);
   }
+  hide() {
+    this.hidden = true;
+  }
+  show() {
+    this.hidden = false;
+  }
 }
 
 class PsychPix {
@@ -359,6 +367,7 @@ class PsychPix {
     this.sum = 0;
     this.node = null;
     this.color = null;
+    this.hidden = false;
   }
 
   getNode() {
@@ -370,6 +379,8 @@ class PsychPix {
   }
 
   move(){
+    if (this.hidden) return;
+
     this.velocity = createVector(this.amt, this.amt);
 
     if (this.add) {
@@ -396,12 +407,17 @@ class PsychPix {
   }
   
   display(){
-    stroke(this.color);
-    strokeWeight(app.pixelSize);
-    line(this.node.location.x, this.node.location.y, width - this.location.x -1, this.location.y);
+    if (!this.hidden) {
+      stroke(this.color);
+      strokeWeight(app.pixelSize);
+      line(this.node.location.x, this.node.location.y, width - this.location.x -1, this.location.y);
+    }
   }
   hide() {
-
+    this.hidden = true;
+  }
+  show() {
+    this.hidden = false;
   }
 }
 
@@ -433,6 +449,12 @@ function keyPressed() {
       if (nodes[i].velocity.y <= 0) nodes[i].velocity.y = 1;
     } else if (keyCode == 85) { // u
         nodes[i].unlock();
+    } else if (keyCode == 72) { // h
+      if (nodes[i].hidden) {
+        nodes[i].show();
+      } else {
+        nodes[i].hide();
+      }
     }
   }
 
